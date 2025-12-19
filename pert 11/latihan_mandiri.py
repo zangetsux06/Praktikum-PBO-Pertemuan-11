@@ -1,124 +1,107 @@
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-# DATA MODEL
+# --- SETUP LOGGING ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s - %(name)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
+# Logger dengan nama khusus 'Registration'
+LOG = logging.getLogger('Registration')
 
+# --- DATA MODEL ---
 @dataclass
 class Mahasiswa:
+    """
+    Menyimpan data akademis mahasiswa.
+    
+    Args:
+        nama (str): Nama mahasiswa.
+        sks_lulus (int): Jumlah SKS lulus.
+        mata_kuliah_diambil (list): List matkul yang sudah diambil.
+    """
     nama: str
     sks_lulus: int
-    mata_kuliah_diambil: list  # List mata kuliah yang sudah diambil
+    mata_kuliah_diambil: list
 
-# ==========================================
-# 1. KODE BURUK (SEBELUM REFACTOR)
-# (Sesuai deskripsi soal: menggunakan if/else dalam satu method)
-
-class BadValidatorManager:
-    def validate_registration(self, mhs: Mahasiswa, jenis_validasi: str):
-        # Pelanggaran OCP: Harus ubah kode jika ada aturan baru
-        # Pelanggaran SRP: Satu method mengurusi banyak logika berbeda
-        if jenis_validasi == "sks":
-            if mhs.sks_lulus < 100:
-                print(f"[Bad] {mhs.nama} Gagal: SKS kurang dari 100.")
-                return False
-            print(f"[Bad] {mhs.nama} Lolos validasi SKS.")
-            return True
-        elif jenis_validasi == "prasyarat":
-            if "Algoritma" not in mhs.mata_kuliah_diambil:
-                print(f"[Bad] {mhs.nama} Gagal: Belum ambil Algoritma.")
-                return False
-            print(f"[Bad] {mhs.nama} Lolos validasi Prasyarat.")
-            return True
-        else:
-            print("Jenis validasi tidak dikenal.")
-            return False
-
-
-# 2. HASIL REFACTORING (SOLID)
-
-
-# --- ABSTRAKSI (DIP & OCP) ---
+# --- ABSTRAKSI ---
 class IValidator(ABC):
-    """Kontrak: Semua validator harus punya method validate"""
+    """Interface dasar untuk aturan validasi."""
+    
     @abstractmethod
     def validate(self, mhs: Mahasiswa) -> bool:
+        """Memvalidasi data mahasiswa. Return True jika lolos."""
         pass
 
-# --- IMPLEMENTASI KONKRIT (SRP) ---
-# Tiap class hanya bertanggung jawab untuk satu jenis validasi
-
+# --- IMPLEMENTASI VALIDATOR ---
 class SksValidator(IValidator):
+    """Cek apakah SKS cukup (Minimal 100)."""
+    
     def validate(self, mhs: Mahasiswa) -> bool:
         MIN_SKS = 100
         if mhs.sks_lulus >= MIN_SKS:
-            print(f"[Check SKS] {mhs.nama}: Lolos (SKS {mhs.sks_lulus}).")
+            # Info jika berhasil
+            LOG.info(f"[SKS] {mhs.nama} Lolos. (Punya: {mhs.sks_lulus})")
             return True
-        print(f"[Check SKS] {mhs.nama}: Gagal (Butuh {MIN_SKS}, punya {mhs.sks_lulus}).")
+        # Warning jika gagal
+        LOG.warning(f"[SKS] {mhs.nama} Gagal. SKS kurang (Cuma {mhs.sks_lulus})")
         return False
 
 class PrerequisiteValidator(IValidator):
+    """Cek apakah sudah ambil mata kuliah Algoritma."""
+    
     def validate(self, mhs: Mahasiswa) -> bool:
         SYARAT = "Algoritma"
         if SYARAT in mhs.mata_kuliah_diambil:
-            print(f"[Check Prasyarat] {mhs.nama}: Lolos (Sudah ambil {SYARAT}).")
+            LOG.info(f"[Prasyarat] {mhs.nama} Lolos. Sudah ambil {SYARAT}.")
             return True
-        print(f"[Check Prasyarat] {mhs.nama}: Gagal (Belum ambil {SYARAT}).")
+        LOG.warning(f"[Prasyarat] {mhs.nama} Gagal. Belum ambil {SYARAT}.")
         return False
 
-# --- CHALLENGE OCP (Fitur Baru) ---
-# Kita menambah validasi Pembayaran tanpa menyentuh kode lama
 class TuitionFeeValidator(IValidator):
+    """Cek pembayaran SPP (Fitur tambahan)."""
+    
     def validate(self, mhs: Mahasiswa) -> bool:
-        # Simulasi cek tagihan ke database keuangan
-        print(f"[Check SPP] {mhs.nama}: Lolos (SPP Lunas).")
+        LOG.info(f"[SPP] {mhs.nama} Status: Lunas.")
         return True
 
-# --- KOORDINATOR (Registration Service) ---
+# --- SERVICE KOORDINATOR ---
 class RegistrationService:
-    # Dependency Injection: Menerima list validator apapun
+    """Service utama untuk menangani registrasi."""
+
     def __init__(self, validators: list[IValidator]):
         self.validators = validators
 
     def register(self, mhs: Mahasiswa):
-        print(f"\n--- Memproses Registrasi: {mhs.nama} ---")
+        """Jalankan semua validasi untuk satu mahasiswa."""
+        LOG.info(f"--- Memulai Validasi: {mhs.nama} ---")
         is_valid = True
         
-        # Iterasi semua aturan validasi (Polymorphism)
         for validator in self.validators:
             if not validator.validate(mhs):
                 is_valid = False
-                break # Berhenti jika salah satu gagal
+                # Tidak di-break agar semua error terlihat di log
         
         if is_valid:
-            print(f"HASIL: {mhs.nama} BERHASIL Registrasi.")
+            LOG.info(f"HASIL: {mhs.nama} -> BERHASIL REGISTRASI.\n")
         else:
-            print(f"HASIL: {mhs.nama} GAGAL Registrasi.")
+            LOG.error(f"HASIL: {mhs.nama} -> GAGAL REGISTRASI.\n")
 
-
-# PROGRAM UTAMA
-
+# --- MAIN PROGRAM ---
 if __name__ == "__main__":
-    # 1. Setup Data Mahasiswa
-    # Mahasiswa A: SKS Cukup, Sudah ambil Algoritma
+    # Data Mahasiswa
     mhs_lulus = Mahasiswa("Reza", 110, ["Algoritma", "Basis Data"])
-    # Mahasiswa B: SKS Kurang
     mhs_gagal_sks = Mahasiswa("Alan", 80, ["Algoritma"])
-    # Mahasiswa C: SKS Cukup, Belum ambil Algoritma
-    mhs_gagal_syarat = Mahasiswa("Radit", 105, ["Statistika", "Matematika Diskrit"])
+    mhs_gagal_syarat = Mahasiswa("Radit", 105, ["Statistika"])
 
-    # 2. Setup Validator (Inject Dependencies)
-    # Kita bisa mengatur urutan atau menambah validator baru dengan mudah
-    rules = [
-        SksValidator(),
-        PrerequisiteValidator(),
-        TuitionFeeValidator() # Pembuktian OCP (Challenge)
-    ]
-
-    # 3. Jalankan Service
+    # Setup Aturan
+    rules = [SksValidator(), PrerequisiteValidator(), TuitionFeeValidator()]
+    
+    # Jalankan
     service = RegistrationService(rules)
     
-    service.register(mhs_lulus)       # Harusnya Berhasil
-    service.register(mhs_gagal_sks)   # Harusnya Gagal di SKS
-    service.register(mhs_gagal_syarat)# Harusnya Gagal di Prasyarat
-
-    
+    service.register(mhs_lulus)
+    service.register(mhs_gagal_sks)
+    service.register(mhs_gagal_syarat)
